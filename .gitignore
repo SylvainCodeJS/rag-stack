@@ -3,3 +3,4 @@ models/
 storage/
 .venv/
 __pycache__/
+.qdrant-initialized
