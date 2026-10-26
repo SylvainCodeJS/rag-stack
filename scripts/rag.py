@@ -3,14 +3,16 @@
 
   rag.py ingest PATH [PATH...] [-c COLLECTION]
   rag.py search "question" [-k 5] [-c COLLECTION]
+  rag.py ask "question" [-k 5] [-c COLLECTION]   # retrieve + local LLM answer
 """
-import argparse, hashlib, sys, uuid
+import argparse, hashlib, json, sys, uuid
 from pathlib import Path
 
 import requests
 from qdrant_client import QdrantClient, models
 
 EMBED_URL = "http://127.0.0.1:8081/v1/embeddings"
+LLM_URL = "http://127.0.0.1:8082/v1/chat/completions"
 QDRANT_URL = "http://127.0.0.1:6333"
 DIM = 1024
 CHUNK, OVERLAP = 1200, 200
@@ -93,6 +95,34 @@ def search(args):
         print(f"\n[{h.score:.3f}] {p['source']} #{p['chunk']}\n{p['text'][:args.width]}")
 
 
+SYSTEM = ("You answer questions using ONLY the numbered context passages provided. "
+          "Answer in the language of the question. Cite passages like [1], [2]. "
+          "If the context does not contain the answer, say so plainly instead of guessing.")
+
+
+def ask(args):
+    client = QdrantClient(url=QDRANT_URL)
+    hits = client.query_points(args.collection, query=embed([args.query])[0],
+                               limit=args.k, with_payload=True).points
+    if not hits:
+        sys.exit("No passages found: is the collection ingested?")
+    context = "\n\n".join(f"[{i}] ({h.payload['source']})\n{h.payload['text']}"
+                           for i, h in enumerate(hits, 1))
+    body = {"stream": True, "temperature": 0.2, "max_tokens": args.max_tokens,
+            "messages": [{"role": "system", "content": SYSTEM},
+                         {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {args.query}"}]}
+    with requests.post(LLM_URL, json=body, stream=True, timeout=600) as r:
+        r.raise_for_status()
+        for line in r.iter_lines():
+            if line.startswith(b"data: ") and line != b"data: [DONE]":
+                delta = json.loads(line[6:])["choices"][0]["delta"].get("content")
+                if delta:
+                    print(delta, end="", flush=True)
+    print("\n\nSources:")
+    for i, h in enumerate(hits, 1):
+        print(f"  [{i}] {h.payload['source']} #{h.payload['chunk']} (score {h.score:.3f})")
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(required=True)
@@ -101,5 +131,8 @@ if __name__ == "__main__":
     s = sub.add_parser("search"); s.add_argument("query")
     s.add_argument("-k", type=int, default=5); s.add_argument("--width", type=int, default=500)
     s.add_argument("-c", "--collection", default="docs"); s.set_defaults(fn=search)
+    q = sub.add_parser("ask"); q.add_argument("query")
+    q.add_argument("-k", type=int, default=5); q.add_argument("--max-tokens", type=int, default=700)
+    q.add_argument("-c", "--collection", default="docs"); q.set_defaults(fn=ask)
     args = ap.parse_args()
     args.fn(args)
