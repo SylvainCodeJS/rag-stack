@@ -1,0 +1,10 @@
+[Unit]
+Description=Qdrant vector database (RAG)
+
+[Service]
+WorkingDirectory=/home/aaa/rag-stack
+ExecStart=/home/aaa/rag-stack/bin/qdrant --config-path /home/aaa/rag-stack/config/qdrant.yaml
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
