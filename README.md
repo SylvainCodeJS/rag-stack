@@ -28,3 +28,6 @@ With the three services up, ~2.3 GiB of the 11 GiB Vulkan memory stays free.
 ## Limits
 The 4B model can paraphrase loosely; always check the cited passages. It is instructed to say
 so when the context lacks the answer. Larger models do not fit alongside bge-m3 in the free GPU memory.
+
+## License
+MIT for the code in this repo. The downloaded models and binaries keep their own licenses (Qdrant: Apache-2.0, bge-m3: MIT, Qwen3: Apache-2.0).
